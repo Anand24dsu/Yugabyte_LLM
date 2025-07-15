@@ -23,6 +23,7 @@ The primary goal is to provide a robust and scalable architecture for LLM applic
 *   **Efficient Retrieval:** Implements optimized indexing and querying strategies for fast retrieval of LLM outputs.
 *   **Integration Examples:** Provides code examples and tutorials for integrating various LLMs with YugabyteDB.
 *   **Data Management Tools:** Leverages YugabyteDB's data management features for versioning, backup, and recovery.
+*   **Vector Extension Support:** Integrates with YugabyteDB's vector extension for accelerated similarity searches.
 
 ## Benefits of Using YugabyteDB with LLMs
 
@@ -31,6 +32,7 @@ The primary goal is to provide a robust and scalable architecture for LLM applic
 *   **Consistency:** Strong consistency guarantees data integrity and accuracy.
 *   **Performance:** Optimized for low-latency reads and writes, crucial for real-time LLM applications.
 *   **Distributed SQL:** Familiar SQL interface simplifies data management and querying.
+*    **Cost-Effective:** Reduce infrastructure costs with efficient resource utilization.
 
 ## Getting Started
 
@@ -41,37 +43,38 @@ Follow these steps to set up the Yugabyte_LLM project:
 *   Python 3.8+
 *   YugabyteDB Cluster (local or cloud deployment)
 *   pip package manager
+*   OpenAI API key (if using OpenAI models)
 
 ### Installation
 
 1.  **Clone the repository:**
 
 bash
-    source venv/bin/activate  # On Linux/macOS
-    venv\Scripts\activate  # On Windows
-        > **Note:** You may need to create a `requirements.txt` file containing the necessary Python packages, such as `psycopg2`, `openai`, and `numpy`. Example:
-    > 5.  **Set up YugabyteDB:**
+source venv/bin/activate  # On Linux/macOS
+venv\Scripts\activate  # On Windows
+> **Note:** Create a `requirements.txt` file containing the necessary Python packages, such as `psycopg2-binary`, `openai`, `numpy`, and `python-dotenv`.  Example `requirements.txt` content:
 
     *   If you don't have a YugabyteDB cluster, you can set up a local cluster using Docker:
 
 bash
-        docker run -d -p7000:7000 -p9000:9000 -p5433:5433 -p9042:9042 yugabytedb/yugabyte:latest
-            > **Note:** Replace `YOUR_OPENAI_API_KEY` with your actual OpenAI API key if you plan to use OpenAI's models.  Also, ensure the YugabyteDB user has the necessary permissions to create tables and insert data.
+docker run -d -p7000:7000 -p9000:9000 -p5433:5433 -p9042:9042 yugabytedb/yugabyte:latest
+> **Note:** Replace `YOUR_OPENAI_API_KEY` with your actual OpenAI API key if you plan to use OpenAI's models. Also, ensure the YugabyteDB user has the necessary permissions to create tables and insert data.
 
 ### YugabyteDB Setup
 
 1.  **Connect to YugabyteDB and create tables:**
 
 bash
-    ysql -h $YUGABYTEDB_HOST -p $YUGABYTEDB_PORT -U $YUGABYTEDB_USER -d $YUGABYTEDB_DATABASE -f scripts/create_tables.sql
-        > **Note:** The `create_tables.sql` script should contain SQL statements to create the necessary tables, such as the `embeddings` table. Example:
-    > python
-import os
-import openai
-import psycopg2
-from dotenv import load_dotenv
+ysqlsh -h $YUGABYTEDB_HOST -p $YUGABYTEDB_PORT -U $YUGABYTEDB_USER -d $YUGABYTEDB_DATABASE -f scripts/create_tables.sql
+> **Note:**  Use `ysqlsh` instead of `ysql`. The `create_tables.sql` script should contain SQL statements to create the necessary tables, such as the `embeddings` table.  Consider enabling the `vector` extension for efficient similarity searches.  Example `create_tables.sql` content:
 
-load_dotenv()
+
+
+### Example Usage
+
+The following examples demonstrate how to store and retrieve embeddings using YugabyteDB.
+
+1.  **Storing Embeddings:**
 
 # Database configuration
 YB_HOST = os.getenv("YUGABYTEDB_HOST")
@@ -111,17 +114,9 @@ def store_embedding(text, embedding):
             cur.close()
             conn.close()
 
-# Example usage
-text_to_embed = "This is a sample text to generate an embedding for."
-embedding = get_embedding(text_to_embed)
-store_embedding(text_to_embed, embedding)
-python
-import os
-import psycopg2
-import numpy as np
-from dotenv import load_dotenv
 
-load_dotenv()
+
+2.  **Retrieving Similar Texts:**
 
 # Database configuration (as defined in the previous example)
 YB_HOST = os.getenv("YUGABYTEDB_HOST")
@@ -171,25 +166,54 @@ def retrieve_similar_texts(query_embedding, top_n=5):
 query_text = "Find similar documents related to machine learning."
 query_embedding = get_embedding(query_text) # Assuming get_embedding function is defined
 retrieve_similar_texts(query_embedding)
-> **Note:** These examples assume you have the `embeddings` table created in YugabyteDB with columns `text` (TEXT) and `embedding` (FLOAT8[]).  Adapt the table schema and queries as needed. Additionally, consider using YugabyteDB's vector extension for optimized similarity searches when available.  Ensure that your YugabyteDB instance has the `vector` extension enabled for optimal performance.
+> **Note:** These examples assume you have the `embeddings` table created in YugabyteDB with columns `id` (UUID), `text` (TEXT) and `embedding` (vector(1536)). Adapt the table schema and queries as needed.  Consider using the `vector` extension's built-in similarity search functions for optimized performance (e.g., using `<#>` operator for cosine distance).  Ensure that your YugabyteDB instance has the `vector` extension enabled for optimal performance. To enable the extension, connect to your YugabyteDB instance using `ysqlsh` and run `CREATE EXTENSION vector;`.
 
-## Contribution Guidelines
+### Optimized Similarity Search with Vector Extension
 
-We welcome contributions to the Yugabyte_LLM project! Here's how you can contribute:
+python
+import os
+import psycopg2
+import numpy as np
+from dotenv import load_dotenv
 
+load_dotenv()
+
+# Database configuration (as defined in the previous example)
+YB_HOST = os.getenv("YUGABYTEDB_HOST")
+YB_PORT = os.getenv("YUGABYTEDB_PORT")
+YB_USER = os.getenv("YUGABYTEDB_USER")
+YB_PASSWORD = os.getenv("YUGABYTEDB_PASSWORD")
+YB_DATABASE = os.getenv("YUGABYTEDB_DATABASE")
+
+
+def retrieve_similar_texts_vector(query_embedding, top_n=5):
+    try:
+        conn = psycopg2.connect(
+            host=YB_HOST, port=YB_PORT, user=YB_USER, password=YB_PASSWORD, database=YB_DATABASE
+        )
+        cur = conn.cursor()
+
+        # Retrieve texts and their embeddings from the 'embeddings' table
+        # Using the vector extension's <#> operator for cosine distance
+        cur.execute(
+            "SELECT id, text, embedding FROM embeddings ORDER BY embedding <#> %s LIMIT %s",
+            (np.array(query_embedding), top_n)
+        )
+        results = cur.fetchall()
+
+        print("Similar Texts:")
+        for id, text, embedding in results:
+            print(f"- {text}") # Removed similarity since <#> returns distance
+
+    except Exception as e:
+        print(f"Error retrieving similar texts: {e}")
+    finally:
+        if conn:
+            cur.close()
+            conn.close()
+
+# Example Usage
+query_text = "Find similar documents related to machine learning."
+query_embedding = get_embedding(query_text) # Assuming get_embedding function is defined
+retrieve_similar_texts_vector(query_embedding)
 bash
-    git checkout -b feature/your-feature-name
-        *   Provide a clear description of your changes and the problem they solve.
-    *   Ensure all tests pass before submitting the pull request.
-    *   Follow the project's coding style and conventions.
-
-### Coding Standards
-
-*   Use clear and descriptive variable and function names.
-*   Write unit tests for your code.
-*   Follow the PEP 8 style guide for Python code.
-*   Document your code with comments and docstrings.
-
-### Pull Request Process
-
-1.  Ensure your code is well-tested 
